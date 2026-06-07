@@ -1,6 +1,6 @@
 # Temple Management System
 
-Temple Management System is a Next.js application that digitizes temple operations with a modern, scalable architecture. This initial version delivers the Temple Registration module with validation-only UX.
+Temple Management System is a Next.js application that digitizes temple operations with a modern, scalable architecture. 
 
 ## Current Module
 
@@ -30,7 +30,4 @@ npm install
 npm run dev
 ```
 
-## Notes
 
-- This release does not perform authentication or Firestore writes.
-- Future modules will layer on roles, staff, devotees, bookings, donations, and reporting.
