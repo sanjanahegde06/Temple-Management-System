@@ -29,7 +29,8 @@ export default function RootLayout({
       lang="en"
       className={`${displayFont.variable} ${bodyFont.variable} h-full scroll-smooth`}
     >
-      <body className="min-h-full bg-cream text-amber-950 antialiased">
+      {/* suppressHydrationWarning added below to stop extension errors! */}
+      <body className="min-h-full bg-cream text-amber-950 antialiased" suppressHydrationWarning>
         {children}
       </body>
     </html>

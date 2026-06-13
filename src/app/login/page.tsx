@@ -2,9 +2,9 @@
 
 import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { useSearchParams, useRouter } from "next/navigation";
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 
 import FormField from "@/components/forms/FormField";
 import { firebaseAuth } from "@/lib/firebase/auth";
@@ -14,6 +14,7 @@ type FormMode = "login" | "forgot-password" | "forgot-id";
 
 function LoginForm() {
   const searchParams = useSearchParams();
+  const router = useRouter(); // Added router for redirecting after login
   const initialTempleId = searchParams.get("templeId") || "";
 
   const [mode, setMode] = useState<FormMode>("login");
@@ -32,10 +33,60 @@ function LoginForm() {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!templeId || !email || !password) {
+      setMessage({ type: "error", text: "Please fill in all fields." });
+      return;
+    }
+
     setIsLoading(true);
     setMessage(null);
-    alert(`Authentication logic for ${templeId} will be implemented in Week 2!`);
-    setIsLoading(false);
+    
+    try {
+      // 1. Authenticate with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, password);
+      const user = userCredential.user;
+
+      // 2. Fetch the user's Firestore document
+      const userDocRef = doc(firebaseDb, "users", user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        await signOut(firebaseAuth);
+        throw new Error("User record not found in the database.");
+      }
+
+      const userData = userDocSnap.data();
+
+      // 3. Strict Validation: Does their typed Temple ID match their database record?
+      if (userData.templeId !== templeId) {
+        await signOut(firebaseAuth);
+        throw new Error("Invalid Temple ID for this account.");
+      }
+
+      // 4. Success Pipeline
+      setPassword("");
+      setMessage({ type: "success", text: "Authentication successful! Redirecting..." });
+      
+      // Send user to the dashboard
+      router.push(`/dashboard?templeId=${templeId}`);
+
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      
+      if (
+        error.code === "auth/invalid-credential" || 
+        error.code === "auth/user-not-found" || 
+        error.code === "auth/wrong-password"
+      ) {
+        setMessage({ type: "error", text: "Invalid email or password. Please try again." });
+      } else if (error.code === "auth/too-many-requests") {
+        setMessage({ type: "error", text: "Account temporarily locked due to failed attempts." });
+      } else {
+        setMessage({ type: "error", text: error.message || "An unexpected error occurred." });
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -237,7 +288,12 @@ function LoginForm() {
 function TempleMark() {
   return (
     <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/80 border border-white shadow-xl shadow-amber-500/20 backdrop-blur-md">
-      <svg aria-hidden="true" viewBox="0 0 64 64" className="h-11 w-11" fill="none">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 64 64"
+        className="h-11 w-11"
+        fill="none"
+      >
         <path d="M32 18 V 2 L 46 6 L 32 12" fill="#EF4444" stroke="#991B1B" strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M22 40 C 22 22 32 16 32 16 C 32 16 42 22 42 40" fill="#EA580C" stroke="#9A3412" strokeWidth="1.5" />
         <path d="M23 34 H 41 M 25 28 H 39 M 28 22 H 36" stroke="#FBBF24" strokeWidth="2" />
@@ -269,7 +325,6 @@ function TempleMark() {
 export default function LoginPage() {
   return (
     <div className="relative min-h-screen w-full bg-amber-50 overflow-hidden flex items-center justify-center p-6">
-
       {/* Photographic background */}
       <div
         className="absolute inset-0 z-0 bg-[url('https://images.unsplash.com/photo-1582510003544-4d00b7f74220?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center bg-fixed opacity-30 mix-blend-multiply"
