@@ -10,7 +10,7 @@ type FormFieldProps = {
   error?: string;
   disabled?: boolean;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onBlur: (event: FocusEvent<HTMLInputElement>) => void;
+  onBlur?: (event: FocusEvent<HTMLInputElement>) => void;
 };
 
 export default function FormField({

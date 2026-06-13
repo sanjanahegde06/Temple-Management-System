@@ -16,6 +16,7 @@ interface StaffMember {
   role: string;
   status: string;
   createdAt: string;
+  templeId: string;
 }
 
 export default function StaffDirectoryPage() {
