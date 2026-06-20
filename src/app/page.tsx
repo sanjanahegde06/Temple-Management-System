@@ -131,6 +131,7 @@ export default function Home() {
         email: values.email,
         role: "Admin",
         templeId: templeId,
+        templeIds: [templeId], // <-- THE FUTURE-PROOF ARRAY!
         status: "Active",
         createdAt: new Date().toISOString(),
       };

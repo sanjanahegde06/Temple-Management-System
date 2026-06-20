@@ -14,7 +14,7 @@ type FormMode = "login" | "forgot-password" | "forgot-id";
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const router = useRouter(); // Added router for redirecting after login
+  const router = useRouter();
   const initialTempleId = searchParams.get("templeId") || "";
 
   const [mode, setMode] = useState<FormMode>("login");
@@ -57,10 +57,13 @@ function LoginForm() {
 
       const userData = userDocSnap.data();
 
-      // 3. Strict Validation: Does their typed Temple ID match their database record?
-      if (userData.templeId !== templeId) {
+      // 3. MULTI-TENANT STRICT VALIDATION
+      // Checks both the old string (for backwards compatibility) AND the new array
+      const allowedTemples = userData.templeIds || [userData.templeId];
+
+      if (!allowedTemples.includes(templeId)) {
         await signOut(firebaseAuth);
-        throw new Error("Invalid Temple ID for this account.");
+        throw new Error("Your account does not have access to this Temple ID.");
       }
 
       // 4. Success Pipeline
@@ -124,15 +127,23 @@ function LoginForm() {
       const usersRef = collection(firebaseDb, "users");
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
+      
       if (querySnapshot.empty) {
         setMessage({ type: "error", text: "No temple associated with this email address." });
       } else {
         const userData = querySnapshot.docs[0].data();
+        
+        // MULTI-TENANT UPDATE FOR TEMPLE ID RECOVERY
+        const allowedTemples = userData.templeIds || [userData.templeId];
+        const templesList = allowedTemples.join(", ");
+
         setMessage({
           type: "success",
-          text: `Found it! Your Temple ID is: ${userData.templeId}`,
+          text: `Found it! Your active Temple IDs are: ${templesList}`,
         });
-        setTempleId(userData.templeId);
+        
+        // Auto-fill the first one to be helpful
+        setTempleId(allowedTemples[0]);
       }
     } catch (error: any) {
       console.error("Temple ID lookup error:", error);
