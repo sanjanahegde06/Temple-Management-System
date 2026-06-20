@@ -9,16 +9,37 @@ import Link from "next/link";
 import { firebaseAuth } from "@/lib/firebase/auth";
 import { firebaseDb } from "@/lib/firebase/firestore";
 
+interface DashboardPermissions {
+  viewDevotees: boolean;
+  viewStaffCount: boolean;
+  viewDonations: boolean;
+}
+
+const NO_ACCESS_MSG = "You don't have permission to view this. Please contact your Temple Admin.";
+
+function LockIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    </svg>
+  );
+}
+
 function DashboardContent() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [templeName, setTempleName] = useState<string>("Loading...");
   const [adminName, setAdminName] = useState<string>("");
   const [userRole, setUserRole] = useState<string>("Loading...");
+  const [permissions, setPermissions] = useState<DashboardPermissions>({
+    viewDevotees: false,
+    viewStaffCount: false,
+    viewDonations: false,
+  });
   
   // Real-time stat states
   const [staffCount, setStaffCount] = useState<number | null>(null);
-  const [devoteeCount, setDevoteeCount] = useState<number | null>(null); // Added this!
+  const [devoteeCount, setDevoteeCount] = useState<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
@@ -34,9 +55,19 @@ function DashboardContent() {
           const userData = userDoc.data();
           setAdminName(userData.name);
           setUserRole(userData.role);
+
+          const isAdmin = userData.role === "Admin";
+          const grantedPermissions = userData.permissions || {};
+          const effectivePermissions: DashboardPermissions = {
+            viewDevotees: isAdmin || !!grantedPermissions.viewDevotees,
+            viewStaffCount: isAdmin || !!grantedPermissions.viewStaffCount,
+            viewDonations: isAdmin || !!grantedPermissions.viewDonations,
+          };
+          setPermissions(effectivePermissions);
+
           const currentTempleId = userData.templeId;
 
-          // Fetch Temple Name
+          // Fetch Temple Name (always visible - no sensitive data)
           const templeDoc = await getDoc(doc(firebaseDb, "temples", currentTempleId));
           if (templeDoc.exists()) {
             setTempleName(templeDoc.data().templeName);
@@ -44,22 +75,26 @@ function DashboardContent() {
             setTempleName("Unknown Temple");
           }
 
-          // Fetch Actual Staff Count
-          const usersRef = collection(firebaseDb, "users");
-          const qOld = query(usersRef, where("templeId", "==", currentTempleId));
-          const qNew = query(usersRef, where("templeIds", "array-contains", currentTempleId));
-          
-          const [snapOld, snapNew] = await Promise.all([getDocs(qOld), getDocs(qNew)]);
-          const uniqueStaff = new Set();
-          snapOld.forEach(doc => uniqueStaff.add(doc.id));
-          snapNew.forEach(doc => uniqueStaff.add(doc.id));
-          setStaffCount(uniqueStaff.size);
+          // Fetch Staff Count only if permitted
+          if (effectivePermissions.viewStaffCount) {
+            const usersRef = collection(firebaseDb, "users");
+            const qOld = query(usersRef, where("templeId", "==", currentTempleId));
+            const qNew = query(usersRef, where("templeIds", "array-contains", currentTempleId));
+            
+            const [snapOld, snapNew] = await Promise.all([getDocs(qOld), getDocs(qNew)]);
+            const uniqueStaff = new Set();
+            snapOld.forEach(doc => uniqueStaff.add(doc.id));
+            snapNew.forEach(doc => uniqueStaff.add(doc.id));
+            setStaffCount(uniqueStaff.size);
+          }
 
-          // NEW: Fetch Actual Devotee Count
-          const devoteesRef = collection(firebaseDb, "devotees");
-          const qDevotees = query(devoteesRef, where("templeId", "==", currentTempleId));
-          const devoteesSnap = await getDocs(qDevotees);
-          setDevoteeCount(devoteesSnap.size);
+          // Fetch Devotee Count only if permitted
+          if (effectivePermissions.viewDevotees) {
+            const devoteesRef = collection(firebaseDb, "devotees");
+            const qDevotees = query(devoteesRef, where("templeId", "==", currentTempleId));
+            const devoteesSnap = await getDocs(qDevotees);
+            setDevoteeCount(devoteesSnap.size);
+          }
 
         }
       } catch (error) {
@@ -101,46 +136,122 @@ function DashboardContent() {
 
       {/* Live Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 border border-amber-200/60 shadow-xl shadow-amber-900/5">
-          <p className="text-sm font-bold uppercase tracking-wider text-amber-800 mb-1">Registered Devotees</p>
-          {/* Now uses the live devoteeCount! */}
-          <p className="text-4xl font-[var(--font-display)] text-amber-950">
-            {devoteeCount !== null ? devoteeCount : "..."}
-          </p>
-          <p className="text-xs font-medium text-emerald-600 mt-2">Families in your CRM</p>
-        </div>
+        
+        {/* Registered Devotees */}
+        {permissions.viewDevotees ? (
+          <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 border border-amber-200/60 shadow-xl shadow-amber-900/5">
+            <p className="text-sm font-bold uppercase tracking-wider text-amber-800 mb-1">Registered Devotees</p>
+            <p className="text-4xl font-[var(--font-display)] text-amber-950">
+              {devoteeCount !== null ? devoteeCount : "..."}
+            </p>
+            <p className="text-xs font-medium text-emerald-600 mt-2">Families in your CRM</p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => alert(NO_ACCESS_MSG)}
+            className="bg-amber-50/60 backdrop-blur-md rounded-3xl p-6 border border-amber-200/40 shadow-sm text-left cursor-not-allowed"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-bold uppercase tracking-wider text-amber-800/40">Registered Devotees</p>
+              <LockIcon className="h-4 w-4 text-amber-800/40" />
+            </div>
+            <p className="text-2xl font-[var(--font-display)] text-amber-800/40">Restricted</p>
+            <p className="text-xs font-medium text-amber-700/50 mt-2">Ask Admin for access</p>
+          </button>
+        )}
 
-        <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 border border-amber-200/60 shadow-xl shadow-amber-900/5">
-          <p className="text-sm font-bold uppercase tracking-wider text-amber-800 mb-1">Active Staff</p>
-          <p className="text-4xl font-[var(--font-display)] text-amber-950">{staffCount !== null ? staffCount : "..."}</p>
-          <p className="text-xs font-medium text-emerald-600 mt-2">System administrators</p>
-        </div>
+        {/* Active Staff */}
+        {permissions.viewStaffCount ? (
+          <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 border border-amber-200/60 shadow-xl shadow-amber-900/5">
+            <p className="text-sm font-bold uppercase tracking-wider text-amber-800 mb-1">Active Staff</p>
+            <p className="text-4xl font-[var(--font-display)] text-amber-950">{staffCount !== null ? staffCount : "..."}</p>
+            <p className="text-xs font-medium text-emerald-600 mt-2">System administrators</p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => alert(NO_ACCESS_MSG)}
+            className="bg-amber-50/60 backdrop-blur-md rounded-3xl p-6 border border-amber-200/40 shadow-sm text-left cursor-not-allowed"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-bold uppercase tracking-wider text-amber-800/40">Active Staff</p>
+              <LockIcon className="h-4 w-4 text-amber-800/40" />
+            </div>
+            <p className="text-2xl font-[var(--font-display)] text-amber-800/40">Restricted</p>
+            <p className="text-xs font-medium text-amber-700/50 mt-2">Ask Admin for access</p>
+          </button>
+        )}
 
-        <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 border border-amber-200/60 shadow-xl shadow-amber-900/5">
-          <p className="text-sm font-bold uppercase tracking-wider text-amber-800 mb-1">Today's Donations</p>
-          <p className="text-4xl font-[var(--font-display)] text-amber-950">₹0</p>
-          <p className="text-xs font-medium text-amber-600 mt-2">Module unlocks in Week 6</p>
-        </div>
+        {/* Today's Donations */}
+        {permissions.viewDonations ? (
+          <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 border border-amber-200/60 shadow-xl shadow-amber-900/5">
+            <p className="text-sm font-bold uppercase tracking-wider text-amber-800 mb-1">Today's Donations</p>
+            <p className="text-4xl font-[var(--font-display)] text-amber-950">₹0</p>
+            <p className="text-xs font-medium text-amber-600 mt-2">Module unlocks in Week 6</p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => alert(NO_ACCESS_MSG)}
+            className="bg-amber-50/60 backdrop-blur-md rounded-3xl p-6 border border-amber-200/40 shadow-sm text-left cursor-not-allowed"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-bold uppercase tracking-wider text-amber-800/40">Today's Donations</p>
+              <LockIcon className="h-4 w-4 text-amber-800/40" />
+            </div>
+            <p className="text-2xl font-[var(--font-display)] text-amber-800/40">Restricted</p>
+            <p className="text-xs font-medium text-amber-700/50 mt-2">Ask Admin for access</p>
+          </button>
+        )}
       </div>
 
       {/* Quick Access Links */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link 
-          href="/dashboard/devotees"
-          className="h-40 rounded-3xl border-2 border-amber-300 bg-amber-50 flex flex-col items-center justify-center text-amber-900 transition-all hover:bg-amber-100 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-900/10 group relative overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <span className="font-bold text-lg group-hover:scale-105 transition-transform z-10">Devotee CRM</span>
-        </Link>
         
-        <Link 
-          href="#"
-          className="h-40 rounded-3xl border-2 border-amber-300 bg-amber-50 flex flex-col items-center justify-center text-amber-900 transition-all hover:bg-amber-100 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-900/10 group relative overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <span className="font-bold text-lg group-hover:scale-105 transition-transform z-10">Donations Ledger</span>
-        </Link>
+        {/* Devotee CRM */}
+        {permissions.viewDevotees ? (
+          <Link 
+            href="/dashboard/devotees"
+            className="h-40 rounded-3xl border-2 border-amber-300 bg-amber-50 flex flex-col items-center justify-center text-amber-900 transition-all hover:bg-amber-100 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-900/10 group relative overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="font-bold text-lg group-hover:scale-105 transition-transform z-10">Devotee CRM</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => alert(NO_ACCESS_MSG)}
+            className="h-40 rounded-3xl border-2 border-amber-200 bg-amber-50/40 flex flex-col items-center justify-center text-amber-900/40 cursor-not-allowed gap-2"
+          >
+            <LockIcon className="h-6 w-6" />
+            <span className="font-bold text-lg">Devotee CRM</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Restricted</span>
+          </button>
+        )}
         
+        {/* Donations Ledger */}
+        {permissions.viewDonations ? (
+          <Link 
+            href="#"
+            className="h-40 rounded-3xl border-2 border-amber-300 bg-amber-50 flex flex-col items-center justify-center text-amber-900 transition-all hover:bg-amber-100 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-900/10 group relative overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="font-bold text-lg group-hover:scale-105 transition-transform z-10">Donations Ledger</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => alert(NO_ACCESS_MSG)}
+            className="h-40 rounded-3xl border-2 border-amber-200 bg-amber-50/40 flex flex-col items-center justify-center text-amber-900/40 cursor-not-allowed gap-2"
+          >
+            <LockIcon className="h-6 w-6" />
+            <span className="font-bold text-lg">Donations Ledger</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Restricted</span>
+          </button>
+        )}
+        
+        {/* Staff Directory - visible to all logged-in staff; Add/Manage actions are gated inside that page */}
         <Link 
           href="/dashboard/staff"
           className="h-40 rounded-3xl border-2 border-amber-300 bg-amber-50 flex flex-col items-center justify-center text-amber-900 transition-all hover:bg-amber-100 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-900/10 group relative overflow-hidden"

@@ -9,6 +9,12 @@ import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc, dele
 import { firebaseAuth } from "@/lib/firebase/auth";
 import { firebaseDb } from "@/lib/firebase/firestore";
 
+interface DashboardPermissions {
+  viewDevotees: boolean;
+  viewStaffCount: boolean;
+  viewDonations: boolean;
+}
+
 interface StaffMember {
   uid: string;
   name: string;
@@ -18,7 +24,20 @@ interface StaffMember {
   createdAt: string;
   templeId: string;
   templeIds?: string[]; // Added this to support multi-temple access
+  permissions?: DashboardPermissions;
 }
+
+const DEFAULT_PERMISSIONS: DashboardPermissions = {
+  viewDevotees: false,
+  viewStaffCount: false,
+  viewDonations: false,
+};
+
+const FULL_PERMISSIONS: DashboardPermissions = {
+  viewDevotees: true,
+  viewStaffCount: true,
+  viewDonations: true,
+};
 
 export default function StaffDirectoryPage() {
   const router = useRouter();
@@ -34,11 +53,13 @@ export default function StaffDirectoryPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("Staff");
+  const [newPermissions, setNewPermissions] = useState<DashboardPermissions>(DEFAULT_PERMISSIONS);
 
   // Manage (Edit/Delete) Modal States
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [editRole, setEditRole] = useState("Staff");
+  const [editPermissions, setEditPermissions] = useState<DashboardPermissions>(DEFAULT_PERMISSIONS);
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
@@ -117,6 +138,7 @@ export default function StaffDirectoryPage() {
 
       // 3. Save to Firestore (Brand New User)
       const finalName = newName.trim() === "" ? `Staff ${staffList.length + 1}` : newName.trim();
+      const finalPermissions = newRole === "Admin" ? FULL_PERMISSIONS : newPermissions;
       
       const newStaffMember: StaffMember = {
         uid: realUid,
@@ -127,6 +149,7 @@ export default function StaffDirectoryPage() {
         templeIds: [templeId], // THE NEW ARRAY STRUCTURE
         status: "Active",
         createdAt: new Date().toISOString(),
+        permissions: finalPermissions,
       };
 
       await setDoc(doc(firebaseDb, "users", realUid), newStaffMember);
@@ -136,6 +159,7 @@ export default function StaffDirectoryPage() {
       setNewEmail("");
       setNewPassword("");
       setNewRole("Staff");
+      setNewPermissions(DEFAULT_PERMISSIONS);
       setIsAddModalOpen(false);
 
       alert(`Success! Hand these credentials to your staff member:\n\nEmail: ${newEmail}\nPassword: ${newPassword}\nTemple ID: ${templeId}`);
@@ -184,10 +208,15 @@ export default function StaffDirectoryPage() {
   const openManageModal = (staff: StaffMember) => {
     setSelectedStaff(staff);
     setEditRole(staff.role);
+    setEditPermissions(
+      staff.role === "Admin"
+        ? FULL_PERMISSIONS
+        : staff.permissions || DEFAULT_PERMISSIONS
+    );
     setIsManageModalOpen(true);
   };
 
-  // Handle Updating Existing Staff Role
+  // Handle Updating Existing Staff Role & Permissions
   const handleUpdateRole = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStaff) return;
@@ -203,12 +232,14 @@ export default function StaffDirectoryPage() {
       }
     }
 
+    const finalPermissions = editRole === "Admin" ? FULL_PERMISSIONS : editPermissions;
+
     try {
       const staffRef = doc(firebaseDb, "users", selectedStaff.uid);
-      await updateDoc(staffRef, { role: editRole });
+      await updateDoc(staffRef, { role: editRole, permissions: finalPermissions });
 
       setStaffList((prev) => 
-        prev.map((staff) => staff.uid === selectedStaff.uid ? { ...staff, role: editRole } : staff)
+        prev.map((staff) => staff.uid === selectedStaff.uid ? { ...staff, role: editRole, permissions: finalPermissions } : staff)
       );
       
       setIsManageModalOpen(false);
@@ -346,7 +377,7 @@ export default function StaffDirectoryPage() {
       {/* --- ADD STAFF MODAL --- */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-amber-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-amber-100 p-8 animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-amber-100 p-8 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-amber-950">Add Personnel</h2>
               <button onClick={() => setIsAddModalOpen(false)} className="text-amber-900/50 hover:text-amber-900 transition">
@@ -380,6 +411,42 @@ export default function StaffDirectoryPage() {
                   <option value="Admin">Admin (Full Access)</option>
                 </select>
               </div>
+
+              {newRole === "Staff" && (
+                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                    Dashboard Visibility
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newPermissions.viewDevotees}
+                      onChange={(e) => setNewPermissions((prev) => ({ ...prev, viewDevotees: e.target.checked }))}
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    Registered Devotees
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newPermissions.viewStaffCount}
+                      onChange={(e) => setNewPermissions((prev) => ({ ...prev, viewStaffCount: e.target.checked }))}
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    Active Staff Count
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newPermissions.viewDonations}
+                      onChange={(e) => setNewPermissions((prev) => ({ ...prev, viewDonations: e.target.checked }))}
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    Donations
+                  </label>
+                </div>
+              )}
+
               <button type="submit" disabled={isSubmitting} className="mt-2 h-12 w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 font-bold text-white shadow-lg transition hover:brightness-105 disabled:opacity-70">
                 {isSubmitting ? "Creating..." : "Create & Add to Directory"}
               </button>
@@ -391,7 +458,7 @@ export default function StaffDirectoryPage() {
       {/* --- MANAGE (EDIT/DELETE) STAFF MODAL --- */}
       {isManageModalOpen && selectedStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-amber-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-amber-100 p-8 animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-amber-100 p-8 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-amber-950">Manage Access</h2>
@@ -414,6 +481,41 @@ export default function StaffDirectoryPage() {
                   <option value="Admin">Admin (Full Access)</option>
                 </select>
               </div>
+
+              {editRole === "Staff" && (
+                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                    Dashboard Visibility
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editPermissions.viewDevotees}
+                      onChange={(e) => setEditPermissions((prev) => ({ ...prev, viewDevotees: e.target.checked }))}
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    Registered Devotees
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editPermissions.viewStaffCount}
+                      onChange={(e) => setEditPermissions((prev) => ({ ...prev, viewStaffCount: e.target.checked }))}
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    Active Staff Count
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editPermissions.viewDonations}
+                      onChange={(e) => setEditPermissions((prev) => ({ ...prev, viewDonations: e.target.checked }))}
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    Donations
+                  </label>
+                </div>
+              )}
               
               <button type="submit" disabled={isUpdating} className="h-12 w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 font-bold text-white shadow-lg transition hover:brightness-105 disabled:opacity-70">
                 {isUpdating ? "Updating..." : "Save Changes"}
