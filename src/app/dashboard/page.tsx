@@ -13,6 +13,7 @@ interface DashboardPermissions {
   viewDevotees: boolean;
   viewStaffCount: boolean;
   viewDonations: boolean;
+  viewBookings: boolean; // Added new permission for Bookings
 }
 
 const NO_ACCESS_MSG = "You don't have permission to view this. Please contact your Temple Admin.";
@@ -35,6 +36,7 @@ function DashboardContent() {
     viewDevotees: false,
     viewStaffCount: false,
     viewDonations: false,
+    viewBookings: false,
   });
   
   // Real-time stat states
@@ -62,6 +64,7 @@ function DashboardContent() {
             viewDevotees: isAdmin || !!grantedPermissions.viewDevotees,
             viewStaffCount: isAdmin || !!grantedPermissions.viewStaffCount,
             viewDonations: isAdmin || !!grantedPermissions.viewDonations,
+            viewBookings: isAdmin || !!grantedPermissions.viewBookings,
           };
           setPermissions(effectivePermissions);
 
@@ -207,7 +210,7 @@ function DashboardContent() {
       </div>
 
       {/* Quick Access Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         
         {/* Devotee CRM */}
         {permissions.viewDevotees ? (
@@ -226,6 +229,27 @@ function DashboardContent() {
           >
             <LockIcon className="h-6 w-6" />
             <span className="font-bold text-lg">Devotee CRM</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Restricted</span>
+          </button>
+        )}
+
+        {/* Booking Management */}
+        {permissions.viewBookings ? (
+          <Link 
+            href="/dashboard/bookings"
+            className="h-40 rounded-3xl border-2 border-amber-300 bg-amber-50 flex flex-col items-center justify-center text-amber-900 transition-all hover:bg-amber-100 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-900/10 group relative overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="font-bold text-lg group-hover:scale-105 transition-transform z-10">Bookings Ledger</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => alert(NO_ACCESS_MSG)}
+            className="h-40 rounded-3xl border-2 border-amber-200 bg-amber-50/40 flex flex-col items-center justify-center text-amber-900/40 cursor-not-allowed gap-2"
+          >
+            <LockIcon className="h-6 w-6" />
+            <span className="font-bold text-lg">Bookings Ledger</span>
             <span className="text-xs font-medium uppercase tracking-wider">Restricted</span>
           </button>
         )}
